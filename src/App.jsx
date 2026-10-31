@@ -84,11 +84,11 @@ export default function App() {
   })
 
   //
-  const [vendor, setVendor] = useState(() => localStorage.getItem('milki-food-vendor') || '')
+  const [vendor, setVendor] = useState('')
   const [vendorType, setVendorType] = useState('Restaurant')
-  const [vendorPhone, setVendorPhone] = useState(() => localStorage.getItem('milki-food-phone') || '')
-  const [vendorCity, setVendorCity] = useState(() => localStorage.getItem('milki-food-city') || '')
-  const [vendorAddress, setVendorAddress] = useState(() => localStorage.getItem('milki-food-address') || '')
+  const [vendorPhone, setVendorPhone] = useState('')
+  const [vendorCity, setVendorCity] = useState('')
+  const [vendorAddress, setVendorAddress] = useState('')
   const [vendorStatus, setVendorStatus] = useState('Hin galmoofne')
   const [vendorDbId, setVendorDbId] = useState(null)
   const [vendorLoading, setVendorLoading] = useState(false)
@@ -100,10 +100,23 @@ export default function App() {
       if (!user) {
         setVendorDbId(null)
         setVendorStatus('Hin galmoofne')
+        setVendor('')
+        setVendorType('Restaurant')
+        setVendorPhone('')
+        setVendorCity('')
+        setVendorAddress('')
+        setVendorLoading(false)
         return
       }
 
       setVendorLoading(true)
+      setVendorDbId(null)
+      setVendorStatus('Hin galmoofne')
+      setVendor('')
+      setVendorType('Restaurant')
+      setVendorPhone('')
+      setVendorCity('')
+      setVendorAddress('')
       const { data, error } = await supabase
         .from('vendors')
         .select('id,business_name,vendor_type,phone,city,address,status')
@@ -140,16 +153,6 @@ export default function App() {
     return () => { active = false }
   }, [user])
 
-  useEffect(() => {
-    localStorage.setItem('milki-food-vendor', vendor)
-    localStorage.setItem('milki-food-phone', vendorPhone)
-    localStorage.setItem('milki-food-city', vendorCity)
-    localStorage.setItem('milki-food-address', vendorAddress)
-  }, [vendor, vendorPhone, vendorCity, vendorAddress])
-
-  useEffect(() => {
-    localStorage.setItem('milki-food-vendor', vendor)
-  }, [vendor])
   const [food, setFood] = useState('')
   const [category, setCategory] = useState(categories[0])
   const [price, setPrice] = useState('')
@@ -171,9 +174,9 @@ export default function App() {
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [deliveryNote, setDeliveryNote] = useState('')
   const [orderMessage, setOrderMessage] = useState('')
+  const [orderSubmitting, setOrderSubmitting] = useState(false)
   const [orderTrackingCodes, setOrderTrackingCodes] = useState([])
-  const [trackingOrderId, setTrackingOrderId] = useState('')
-  const [trackingPhone, setTrackingPhone] = useState('')
+  const [trackingToken, setTrackingToken] = useState('')
   const [trackingOrder, setTrackingOrder] = useState(null)
   const [trackingMessage, setTrackingMessage] = useState('')
   const [trackingLoading, setTrackingLoading] = useState(false)
@@ -283,14 +286,14 @@ export default function App() {
       return
     }
 
-    const { error } = await supabase.from('vendors').insert({
+    const { data, error } = await supabase.from('vendors').insert({
       owner_id: user.id,
       business_name: vendor.trim(),
       vendor_type: vendorType,
       phone: vendorPhone.trim(),
       city: vendorCity.trim(),
       address: vendorAddress.trim()
-    })
+    }).select('id,status').single()
 
     if (error) {
       console.error('Vendor registration error:', error)
@@ -298,7 +301,8 @@ export default function App() {
       return
     }
 
-    setVendorStatus('Eeggataa')
+    setVendorDbId(data.id)
+    setVendorStatus(data.status === 'approved' ? 'Raggaasifame' : 'Eeggataa')
     setMessage('Galmeen daldalaa Supabase keessatti kuufameera. Eeyyama Admin MILKI eeggadhu.')
   }
 
@@ -420,95 +424,172 @@ export default function App() {
   }
 
 
-  async function trackCustomerOrder(e) {
-    e.preventDefault()
-    const orderId = trackingOrderId.trim()
-    const phone = trackingPhone.trim()
+  function getOrderStatusLabel(status) {
+    const labels = {
+      new: 'Ajaja haaraa',
+      accepted: 'Ajajni fudhatame',
+      preparing: 'Nyaata qopheessaa jiru',
+      ready: 'Nyaanni qophaaʼeera',
+      on_the_way: 'Karaa irra jira',
+      out_for_delivery: 'Geejjibaan ergame',
+      delivered: 'Maamila bira gaʼe',
+      cancelled: 'Ajajni haqame',
+    }
+    return labels[status] || status
+  }
 
-    if (!orderId || !phone) {
-      setTrackingMessage('ID ajajaa fi lakkoofsa bilbilaa galchi.')
+  async function trackCustomerOrder(e) {
+    e?.preventDefault()
+    const token = trackingToken.trim()
+
+    if (!token) {
+      setTrackingMessage('Koodii iccitii hordoffii galchi.')
       return
     }
 
     setTrackingLoading(true)
     setTrackingMessage('')
-    setTrackingOrder(null)
 
-    const { data, error } = await supabase.rpc('track_guest_order_by_id_phone', {
-      p_order_id: orderId,
-      p_customer_phone: phone
-    })
+    try {
+      const { data, error } = await supabase.rpc('track_guest_order', {
+        p_token: token
+      })
 
-    if (error) {
+      if (error) throw error
+
+      if (!data || !data.order_id) {
+        setTrackingMessage('Koodiin hordoffii sirrii miti.')
+        setTrackingOrder(null)
+      } else {
+        setTrackingOrder(data)
+        setTrackingMessage('Haalli ajajaa haaromfameera.')
+      }
+    } catch (error) {
       console.error('Order tracking error:', error)
       setTrackingMessage('Hordoffiin hin milkoofne: ' + error.message)
-    } else if (!data || !data.order_id) {
-      setTrackingMessage('ID ajajaa ykn lakkoofsi bilbilaa sirrii miti.')
-    } else {
-      setTrackingOrder(data)
+    } finally {
+      setTrackingLoading(false)
     }
-
-    setTrackingLoading(false)
   }
 
   async function handlePlaceOrder(e) {
     e.preventDefault()
+
+    if (orderSubmitting) return
 
     if (!cart.length) {
       setOrderMessage('Cart kee duwwaa dha.')
       return
     }
 
-    const groups = cart.reduce((result, item) => {
-      if (!item.vendor_id || !item.id) {
-        throw new Error('Odeeffannoon menu guutuu miti. Menu haaromsi.')
-      }
-      if (!result[item.vendor_id]) result[item.vendor_id] = []
-      result[item.vendor_id].push(item)
-      return result
-    }, {})
+    const phoneDigits = customerPhone.replace(/\D/g, '')
+    if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+      setOrderMessage('Lakkoofsi bilbilaa sirrii galchi.')
+      return
+    }
 
+    if (
+      customerName.trim().length < 2 ||
+      customerCity.trim().length < 2 ||
+      customerArea.trim().length < 1 ||
+      deliveryAddress.trim().length < 4
+    ) {
+      setOrderMessage('Odeeffannoo maamilaa fi teessoo guutuu sirreessi.')
+      return
+    }
+
+    if (cart.some(item =>
+      !item.id ||
+      !item.vendor_id ||
+      !Number.isInteger(Number(item.quantity || 1)) ||
+      Number(item.quantity || 1) < 1 ||
+      Number(item.quantity || 1) > 99
+    )) {
+      setOrderMessage('Meeshaa ykn baay’ina isaa sirreessi; menu haaromsi.')
+      return
+    }
+
+    setOrderSubmitting(true)
     setOrderMessage('Ajaja kee database MILKI keessatti kuusaa jira...')
 
     try {
+      const groups = cart.reduce((result, item) => {
+        if (!result[item.vendor_id]) result[item.vendor_id] = []
+        result[item.vendor_id].push(item)
+        return result
+      }, {})
+
       const results = []
+      const failedVendors = []
+      const successfulVendorIds = []
 
       for (const [vendorId, vendorItems] of Object.entries(groups)) {
-        const { data, error } = await supabase.rpc('place_guest_order', {
-          p_vendor_id: vendorId,
-          p_customer_name: customerName.trim(),
-          p_customer_phone: customerPhone.trim(),
-          p_city: customerCity.trim(),
-          p_neighborhood: customerArea.trim(),
-          p_delivery_address: deliveryAddress.trim(),
-          p_delivery_notes: deliveryNote.trim(),
-          p_items: vendorItems.map(item => ({
-            menu_item_id: item.id,
-            quantity: item.quantity || 1
-          }))
-        })
+        try {
+          const { data, error } = await supabase.rpc('place_guest_order', {
+            p_vendor_id: vendorId,
+            p_customer_name: customerName.trim(),
+            p_customer_phone: customerPhone.trim(),
+            p_city: customerCity.trim(),
+            p_neighborhood: customerArea.trim(),
+            p_delivery_address: deliveryAddress.trim(),
+            p_delivery_notes: deliveryNote.trim(),
+            p_items: vendorItems.map(item => ({
+              menu_item_id: item.id,
+              quantity: Number(item.quantity || 1)
+            }))
+          })
 
-        if (error) throw error
-        results.push(data)
+          if (error) throw error
+          if (!data?.order_id || !data?.tracking_token) {
+            throw new Error('Deebiin ajajaa guutuu miti.')
+          }
+
+          results.push(data)
+          successfulVendorIds.push(vendorId)
+        } catch (error) {
+          console.error('Vendor order error:', vendorId, error)
+          failedVendors.push({ vendorId, message: error.message })
+        }
       }
 
-      const orderDetails = results.map((result, index) =>
-        `Ajaja ${index + 1}: ${result.order_id}, Koodii hordoffii: ${result.tracking_token}`
-      ).join(' | ')
+      if (results.length) {
+        setOrderTrackingCodes(previous => [
+          ...previous,
+          ...results.map((result, index) => ({
+            orderId: result.order_id,
+            token: result.tracking_token,
+            index: previous.length + index + 1
+          }))
+        ])
+      }
 
-      setOrderTrackingCodes(results.map((result, index) => ({
-        orderId: result.order_id,
-        token: result.tracking_token,
-        index: index + 1
-      })))
-      setOrderMessage(
-        `Ajajni kee Supabase keessatti kuufameera. Waliigala: ${results.reduce((sum, result) => sum + Number(result.subtotal), 0)} ETB.`
+      if (successfulVendorIds.length) {
+        setCart(previous =>
+          previous.filter(item => !successfulVendorIds.includes(item.vendor_id))
+        )
+      }
+
+      const total = results.reduce(
+        (sum, result) => sum + Number(result.subtotal || 0), 0
       )
-      setCart([])
-      // Checkout banaa tursiisi; ergaa ajajaa agarsiisi.
+
+      if (failedVendors.length) {
+        setOrderMessage(
+          `${results.length} ajajni milkaa'e. Waliigala: ${total} ETB. ` +
+          `${failedVendors.length} ajajni kufe; meeshaaleen isaanii cart keessatti hafaniiru.`
+        )
+      } else if (results.length) {
+        setOrderMessage(
+          `Ajajni kee hundi Supabase keessatti kuufameera. Waliigala: ${total} ETB.`
+        )
+      } else {
+        setOrderMessage('Ajaja kee kuusuun hin milkoofne. Odeeffannoo kee ilaali.')
+      }
     } catch (error) {
       console.error('Order submission error:', error)
       setOrderMessage('Ajaja kuusuun hin milkoofne: ' + error.message)
+    } finally {
+      setOrderSubmitting(false)
     }
   }
 
@@ -604,6 +685,9 @@ export default function App() {
                 <article className="cart-item" key={order.id}>
                   <div>
                     <h4>Ajaja #{order.id.slice(0, 8)}</h4>
+                    <p style={{ overflowWrap: 'anywhere' }}>
+                      <strong>ID Ajajaa Guutuu:</strong> <code>{order.id}</code>
+                    </p>
                     <p><strong>Maamila:</strong> {order.customer_name}</p>
                     <p><strong>Bilbila:</strong> {order.customer_phone}</p>
                     <p><strong>Magaalaa:</strong> {order.city} · {order.neighborhood}</p>
@@ -618,6 +702,8 @@ export default function App() {
                       <option value="new">Ajaja haaraa</option>
                       <option value="accepted">Ajaja fudhatame</option>
                       <option value="preparing">Nyaata qopheessaa jira</option>
+                      <option value="ready">Nyaanni qophaa'eera</option>
+                      <option value="on_the_way">Karaa irra jira</option>
                       <option value="out_for_delivery">Geejjibaan ergame</option>
                       <option value="delivered">Maamila bira gahe</option>
                       <option value="cancelled">Ajaja haqame</option>
@@ -728,7 +814,7 @@ export default function App() {
               <strong>{item.quantity || 1}</strong>
               <button type="button" onClick={() =>
                 setCart(previous => previous.map((entry, i) =>
-                  i === index ? { ...entry, quantity: (entry.quantity || 1) + 1 } : entry
+                  i === index ? { ...entry, quantity: Math.min(99, (entry.quantity || 1) + 1) } : entry
                 ))
               }>+</button>
               <button type="button" onClick={() =>
@@ -771,8 +857,9 @@ export default function App() {
               <textarea value={deliveryNote}
                 onChange={e => setDeliveryNote(e.target.value)} />
 
-              <button className="primary-button" type="submit">
-                Order koo qopheessi
+              <button className="primary-button" type="submit"
+                disabled={orderSubmitting}>
+                {orderSubmitting ? 'Ajaja ergaa jira...' : 'Order koo qopheessi'}
               </button>
               {orderMessage && <p className="notice">{orderMessage}</p>}
               {orderTrackingCodes.map(code => (
@@ -808,23 +895,14 @@ export default function App() {
 
         <section className="tracking-section">
         <h2>Ajaja Koo Hordofi</h2>
-        <p>ID ajajaa fi lakkoofsa bilbilaa kee galchi.</p>
+        <p>Koodii iccitii hordoffii kee galchi.</p>
         <form className="order-form" onSubmit={trackCustomerOrder}>
-          <label>ID Ajajaa</label>
+          <label>Koodii Hordoffii</label>
           <input
-            value={trackingOrderId}
-            onChange={e => setTrackingOrderId(e.target.value)}
-            placeholder="Fakkeenya: 28dcd6af-b498-43e2-a1c2-93804649c863"
+            value={trackingToken}
+            onChange={e => setTrackingToken(e.target.value)}
+            placeholder="Koodii iccitii hordoffii"
             autoComplete="off"
-            required
-          />
-          <label>Lakkoofsa Bilbilaa</label>
-          <input
-            type="tel"
-            value={trackingPhone}
-            onChange={e => setTrackingPhone(e.target.value)}
-            placeholder="Lakkoofsa bilbilaa ajaja irratti galmeessite"
-            autoComplete="tel"
             required
           />
           <button className="primary-button" type="submit" disabled={trackingLoading}>
@@ -836,7 +914,15 @@ export default function App() {
           <article className="cart-item">
             <h3>Ajaja #{trackingOrder.order_id.slice(0, 8)}</h3>
             <p><strong>Daldalaa:</strong> {trackingOrder.vendor_name}</p>
-            <p><strong>Haala:</strong> {trackingOrder.status}</p>
+            <p><strong>Haala:</strong> {getOrderStatusLabel(trackingOrder.status)}</p>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => trackCustomerOrder()}
+              disabled={trackingLoading}
+            >
+              {trackingLoading ? 'Haaromsaa jira...' : 'Ajaja koo haaromsi'}
+            </button>
             <p><strong>Waliigala:</strong> {Number(trackingOrder.subtotal).toFixed(2)} ETB</p>
             <ul>
               {(trackingOrder.items || []).map((item, index) => (
@@ -901,7 +987,20 @@ export default function App() {
             <h2>Daldalaa ta'uu barbaaddaa?</h2>
             <p>Hotel, Restaurant, Café, Bakery fi daldaltoota nyaataa hundaaf.</p>
           </div>
-          <button onClick={() => setShowVendor(true)}>Menu kee galchi</button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowVendor(true)
+              setTimeout(() => {
+                document.querySelector('.vendor-panel')?.scrollIntoView({
+                  behavior: 'smooth',
+                  block: 'start'
+                })
+              }, 100)
+            }}
+          >
+            Menu kee galchi
+          </button>
         </section>
       </main>
 

@@ -111,3 +111,10 @@ footer{text-align:center;padding:25px;color:#888;font-size:12px}
 .hotel-tracking form{display:grid;gap:10px}
 .hotel-tracking input{width:100%;padding:12px;border:1px solid #ddd;border-radius:8px}
 .guest-token{padding:12px;background:#fff;border:1px dashed #98752d;border-radius:8px;overflow-wrap:anywhere;font-weight:800;user-select:all}
+
+.primary-button:disabled,
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(25%);
+}
