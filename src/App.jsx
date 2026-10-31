@@ -618,8 +618,7 @@ export default function App() {
                       <option value="new">Ajaja haaraa</option>
                       <option value="accepted">Ajaja fudhatame</option>
                       <option value="preparing">Nyaata qopheessaa jira</option>
-                      <option value="ready">Nyaanni qophaa'e</option>
-                      <option value="on_the_way">Geejjibaan ergame</option>
+                      <option value="out_for_delivery">Geejjibaan ergame</option>
                       <option value="delivered">Maamila bira gahe</option>
                       <option value="cancelled">Ajaja haqame</option>
                     </select>
