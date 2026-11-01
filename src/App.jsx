@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
-import AuthPanel from './AuthPanel'
+const AuthPanel = lazy(() => import('./AuthPanel'))
 import { supabase } from './lib/supabase'
-import HotelBooking from './HotelBooking'
+const HotelBooking = lazy(() => import('./HotelBooking'))
+const HotelRoomManagement = lazy(() => import('./HotelRoomManagement'))
+const HotelBookingManagement = lazy(() => import('./HotelBookingManagement'))
+import { Translate } from './i18n'
 
 const categories = [
   'NYAATA',
@@ -43,6 +46,15 @@ const foodSuggestions = {
 }
 
 export default function App() {
+  const [language, setLanguage] = useState(() => {
+    const saved = localStorage.getItem('milki-food-language')
+    return ['om', 'en', 'am'].includes(saved) ? saved : 'om'
+  })
+
+  useEffect(() => {
+    localStorage.setItem('milki-food-language', language)
+  }, [language])
+
   const [user, setUser] = useState(null)
 
   useEffect(() => {
@@ -66,7 +78,7 @@ export default function App() {
       mounted = false
       authListener.subscription.unsubscribe()
     }
-  }, {})
+  }, [])
 
   const [items, setItems] = useState(() => {
     try {
@@ -84,74 +96,25 @@ export default function App() {
   })
 
   //
+  const [vendors, setVendors] = useState([])
+  const [newVendor, setNewVendor] = useState('')
+  const [newVendorType, setNewVendorType] = useState('Hotel')
+  const [newVendorPhone, setNewVendorPhone] = useState('')
+  const [newVendorCity, setNewVendorCity] = useState('')
+  const [newVendorAddress, setNewVendorAddress] = useState('')
   const [vendor, setVendor] = useState('')
   const [vendorType, setVendorType] = useState('Restaurant')
-  const [vendorPhone, setVendorPhone] = useState('')
-  const [vendorCity, setVendorCity] = useState('')
-  const [vendorAddress, setVendorAddress] = useState('')
+  const [, setVendorPhone] = useState('')
+  const [, setVendorCity] = useState('')
+  const [, setVendorAddress] = useState('')
   const [vendorStatus, setVendorStatus] = useState('Hin galmoofne')
   const [vendorDbId, setVendorDbId] = useState(null)
   const [vendorLoading, setVendorLoading] = useState(false)
+  const vendorOrdersRequest = useRef(0)
+  const vendorRegistrationLock = useRef(false)
+  const menuItemLock = useRef(false)
 
-  useEffect(() => {
-    let active = true
 
-    async function loadMyVendor() {
-      if (!user) {
-        setVendorDbId(null)
-        setVendorStatus('Hin galmoofne')
-        setVendor('')
-        setVendorType('Restaurant')
-        setVendorPhone('')
-        setVendorCity('')
-        setVendorAddress('')
-        setVendorLoading(false)
-        return
-      }
-
-      setVendorLoading(true)
-      setVendorDbId(null)
-      setVendorStatus('Hin galmoofne')
-      setVendor('')
-      setVendorType('Restaurant')
-      setVendorPhone('')
-      setVendorCity('')
-      setVendorAddress('')
-      const { data, error } = await supabase
-        .from('vendors')
-        .select('id,business_name,vendor_type,phone,city,address,status')
-        .eq('owner_id', user.id)
-        .maybeSingle()
-
-      if (!active) return
-
-      if (error) {
-        console.error('Vendor profile loading error:', error)
-        setMessage('Odeeffannoo daldalaa fiduun hin milkoofne: ' + error.message)
-      } else if (data) {
-        setVendorDbId(data.id)
-        setVendorStatus(
-          data.status === 'approved' ? 'Raggaasifame' :
-          data.status === 'pending' ? 'Eeggataa' :
-          data.status === 'rejected' ? 'Didame' :
-          data.status === 'suspended' ? 'Dhaabbate' : 'Hin galmoofne'
-        )
-        setVendor(data.business_name || '')
-        setVendorType(data.vendor_type || 'Restaurant')
-        setVendorPhone(data.phone || '')
-        setVendorCity(data.city || '')
-        setVendorAddress(data.address || '')
-      } else {
-        setVendorDbId(null)
-        setVendorStatus('Hin galmoofne')
-      }
-
-      setVendorLoading(false)
-    }
-
-    loadMyVendor()
-    return () => { active = false }
-  }, [user])
 
   const [food, setFood] = useState('')
   const [category, setCategory] = useState(categories[0])
@@ -164,6 +127,7 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false)
   const [adminVendors, setAdminVendors] = useState([])
   const [adminLoading, setAdminLoading] = useState(false)
+  const [vendorStatusUpdating, setVendorStatusUpdating] = useState(false)
 
   const [cart, setCart] = useState([])
   const [showCheckout, setShowCheckout] = useState(false)
@@ -175,6 +139,8 @@ export default function App() {
   const [deliveryNote, setDeliveryNote] = useState('')
   const [orderMessage, setOrderMessage] = useState('')
   const [orderSubmitting, setOrderSubmitting] = useState(false)
+  const orderSubmitLock = useRef(false)
+  const orderStatusUpdates = useRef(new Set())
   const [orderTrackingCodes, setOrderTrackingCodes] = useState([])
   const [trackingToken, setTrackingToken] = useState('')
   const [trackingOrder, setTrackingOrder] = useState(null)
@@ -183,6 +149,75 @@ export default function App() {
   const [vendorOrders, setVendorOrders] = useState([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [ordersMessage, setOrdersMessage] = useState('')
+
+  function applyVendorSelection(row) {
+    vendorOrdersRequest.current += 1
+    setVendorOrders([])
+    setOrdersMessage('')
+    setOrdersLoading(false)
+    if (!row) {
+      setVendorDbId(null)
+      setVendor('')
+      setVendorType('Restaurant')
+      setVendorPhone('')
+      setVendorCity('')
+      setVendorAddress('')
+      setVendorStatus('Hin galmoofne')
+      return
+    }
+
+    setVendorDbId(row.id)
+    setVendor(row.business_name || '')
+    setVendorType(row.vendor_type || 'Restaurant')
+    setVendorPhone(row.phone || '')
+    setVendorCity(row.city || '')
+    setVendorAddress(row.address || '')
+    setVendorStatus(
+      row.status === 'approved' ? 'Raggaasifame' :
+      row.status === 'pending' ? 'Eeggataa' :
+      row.status === 'rejected' ? 'Didame' :
+      row.status === 'suspended' ? 'Dhaabbate' : 'Hin galmoofne'
+    )
+  }
+
+  useEffect(() => {
+    let active = true
+
+    async function loadMyVendors() {
+      if (!user) {
+        setVendors([])
+        applyVendorSelection(null)
+        setVendorLoading(false)
+        return
+      }
+
+      setVendorLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('vendors')
+          .select('id,business_name,vendor_type,phone,city,address,status,created_at')
+          .eq('owner_id', user.id)
+          .order('created_at', { ascending: false })
+
+        if (error) throw error
+        if (!active) return
+
+        const rows = data || []
+        setVendors(rows)
+        applyVendorSelection(rows[0] || null)
+      } catch (error) {
+        console.error('Vendor profiles loading error:', error)
+        if (active) {
+          setMessage('Odeeffannoo daldaltootaa fiduun hin milkoofne. Maaloo irra deebi’i.')
+        }
+      } finally {
+        if (active) setVendorLoading(false)
+      }
+    }
+
+    loadMyVendors()
+    return () => { active = false }
+  }, [user])
 
 
 
@@ -223,56 +258,99 @@ export default function App() {
     return () => { active = false }
   }, [user])
 
-  async function loadVendorOrders() {
-    if (!vendorDbId) return
+  const loadVendorOrders = useCallback(async () => {
+    const selectedVendorId = vendorDbId
 
-    setOrdersLoading(true)
-    setOrdersMessage('Ajajoota feaa jira...')
-
-    const { data, error } = await supabase
-      .from('orders')
-      .select('id,customer_name,customer_phone,city,neighborhood,delivery_address,delivery_notes,status,subtotal,created_at,order_items(item_name,unit_price,quantity,line_total)')
-      .eq('vendor_id', vendorDbId)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Vendor orders loading error:', error)
-      setOrdersMessage('Ajajoota fiduun hin milkoofne: ' + error.message)
-    } else {
-      setVendorOrders(data || [])
-      setOrdersMessage(data?.length ? '' : 'Ammaaf ajajni haaraan hin jiru.')
-    }
-
-    setOrdersLoading(false)
-  }
-
-  useEffect(() => {
-    if (showVendor && vendorDbId && vendorStatus === 'Raggaasifame') {
-      loadVendorOrders()
-    }
-  }, [showVendor, vendorDbId, vendorStatus])
-
-  async function updateVendorOrderStatus(orderId, nextStatus) {
-    const { data, error } = await supabase
-      .from("orders")
-      .update({ status: nextStatus })
-      .eq("id", orderId)
-      .eq("vendor_id", vendorDbId)
-      .select("id,status")
-      .single()
-
-    if (error) {
-      console.error("Order status update error:", error)
-      setOrdersMessage("Haala ajajaa jijjiiruun hin milkoofne: " + error.message)
+    if (!selectedVendorId || vendorStatus !== 'Raggaasifame') {
+      vendorOrdersRequest.current += 1
+      setVendorOrders([])
+      setOrdersLoading(false)
+      setOrdersMessage('Daldalaan raggaasifame qofti ajajoota ilaalu danda’a.')
       return
     }
 
-    setVendorOrders(current =>
-      current.map(order =>
-        order.id === orderId ? { ...order, status: data.status } : order
+    const requestId = ++vendorOrdersRequest.current
+    setOrdersLoading(true)
+    setOrdersMessage('Ajajoota feaa jira...')
+
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id,customer_name,customer_phone,city,neighborhood,delivery_address,delivery_notes,status,subtotal,created_at,order_items(item_name,unit_price,quantity,line_total)')
+        .eq('vendor_id', selectedVendorId)
+        .order('created_at', { ascending: false })
+
+      if (requestId !== vendorOrdersRequest.current) return
+      if (error) throw error
+
+      setVendorOrders(data || [])
+      setOrdersMessage(data?.length ? '' : 'Ammaaf ajajni haaraan hin jiru.')
+    } catch (error) {
+      console.error('Vendor orders loading error:', error)
+      if (requestId === vendorOrdersRequest.current) {
+        setOrdersMessage('Ajajoota fiduun hin milkoofne. Maaloo irra deebi’i.')
+      }
+    } finally {
+      if (requestId === vendorOrdersRequest.current) {
+        setOrdersLoading(false)
+      }
+    }
+  }, [vendorDbId, vendorStatus])
+  useEffect(() => {
+    let active = true
+
+    Promise.resolve().then(() => {
+      if (active && showVendor && vendorDbId && vendorStatus === 'Raggaasifame') {
+        loadVendorOrders()
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  }, [showVendor, vendorDbId, vendorStatus, loadVendorOrders])
+
+  async function updateVendorOrderStatus(orderId, nextStatus) {
+    const allowedStatuses = [
+      'new', 'accepted', 'preparing', 'ready',
+      'on_the_way', 'out_for_delivery', 'delivered', 'cancelled'
+    ]
+
+    if (
+      !vendorDbId ||
+      vendorStatus !== 'Raggaasifame' ||
+      !allowedStatuses.includes(nextStatus) ||
+      orderStatusUpdates.current.has(orderId)
+    ) {
+      return
+    }
+
+    orderStatusUpdates.current.add(orderId)
+    setOrdersMessage('Haala ajajaa haaromsaa jira...')
+
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .update({ status: nextStatus })
+        .eq('id', orderId)
+        .eq('vendor_id', vendorDbId)
+        .select('id,status')
+        .single()
+
+      if (error) throw error
+
+      setVendorOrders(current =>
+        current.map(order =>
+          order.id === orderId ? { ...order, status: data.status } : order
+        )
       )
-    )
-    setOrdersMessage("Haalli ajajaa jijjiirameera.")
+      setOrdersMessage('Haalli ajajaa jijjiirameera.')
+    } catch (error) {
+      console.error('Order status update error:', error)
+      setOrdersMessage('Haala ajajaa jijjiiruun hin milkoofne.')
+    } finally {
+      orderStatusUpdates.current.delete(orderId)
+    }
   }
 
   async function registerVendor() {
@@ -281,68 +359,111 @@ export default function App() {
       return
     }
 
-    if (!vendor.trim() || !vendorPhone.trim() || !vendorCity.trim() || !vendorAddress.trim()) {
+    if (vendorRegistrationLock.current) return
+
+    if (!newVendor.trim() || !newVendorPhone.trim() || !newVendorCity.trim() || !newVendorAddress.trim()) {
       setMessage('Maqaa daldalaa, bilbila, magaalaa fi teessoo guutuu galchi.')
       return
     }
 
-    const { data, error } = await supabase.from('vendors').insert({
-      owner_id: user.id,
-      business_name: vendor.trim(),
-      vendor_type: vendorType,
-      phone: vendorPhone.trim(),
-      city: vendorCity.trim(),
-      address: vendorAddress.trim()
-    }).select('id,status').single()
+    vendorRegistrationLock.current = true
+    setVendorLoading(true)
 
-    if (error) {
+    try {
+      const { data, error } = await supabase.from('vendors').insert({
+        owner_id: user.id,
+        business_name: newVendor.trim(),
+        vendor_type: newVendorType,
+        phone: newVendorPhone.trim(),
+        city: newVendorCity.trim(),
+        address: newVendorAddress.trim()
+      }).select('id,business_name,vendor_type,phone,city,address,status,created_at').single()
+
+      if (error) throw error
+
+      setVendors(current => [data, ...current])
+      applyVendorSelection(data)
+      setNewVendor('')
+      setNewVendorPhone('')
+      setNewVendorCity('')
+      setNewVendorAddress('')
+      setMessage('Daldalaan haaraan galmaa’eera. Eeyyama Admin MILKI eeggadhu.')
+    } catch (error) {
       console.error('Vendor registration error:', error)
-      setMessage('Galmeen hin milkoofne: ' + error.message)
-      return
+      setMessage('Galmeen daldalaa hin milkoofne. Maaloo irra deebi’i.')
+    } finally {
+      vendorRegistrationLock.current = false
+      setVendorLoading(false)
     }
-
-    setVendorDbId(data.id)
-    setVendorStatus(data.status === 'approved' ? 'Raggaasifame' : 'Eeggataa')
-    setMessage('Galmeen daldalaa Supabase keessatti kuufameera. Eeyyama Admin MILKI eeggadhu.')
   }
 
   async function loadAdminVendors() {
     setAdminLoading(true)
-    const { data, error } = await supabase
-      .from('vendors')
-      .select('id,business_name,vendor_type,phone,city,address,status,created_at')
-      .order('created_at', { ascending: false })
 
-    if (error) {
-      console.error('Admin vendor loading error:', error)
-      setMessage('Galmee daldaltootaa fiduun hin milkoofne: ' + error.message)
-    } else {
+    try {
+      const { data, error } = await supabase
+        .from('vendors')
+        .select('id,business_name,vendor_type,phone,city,address,status,created_at')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
       setAdminVendors(data || [])
+    } catch (error) {
+      console.error('Admin vendor loading error:', error)
+      setMessage('Galmee daldaltootaa fiduun hin milkoofne. Maaloo irra deebi’i.')
+    } finally {
+      setAdminLoading(false)
     }
-    setAdminLoading(false)
   }
 
   async function updateVendorStatus(id, status) {
-    const { error } = await supabase
-      .from('vendors')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id)
-
-    if (error) {
-      console.error('Vendor status update error:', error)
-      setMessage('Haala galmee jijjiiruun hin milkoofne: ' + error.message)
+    if (!id || !['approved', 'rejected'].includes(status)) {
+      setMessage('Odeeffannoon jijjiirraa sirrii miti.')
       return
     }
 
-    setMessage(status === 'approved'
-      ? 'Daldalaan raggaasifameera.'
-      : 'Galmeen daldalaa didameera.')
-    await loadAdminVendors()
+    if (user?.app_metadata?.role !== 'admin') {
+      setMessage('Jijjiirraa kana raawwachuuf hayyama admin barbaachisa.')
+      return
+    }
+
+    if (vendorStatusUpdating) return
+
+    setVendorStatusUpdating(true)
+    try {
+      const { error } = await supabase
+        .from('vendors')
+        // oxlint-disable-next-line react/purity -- timestamp is generated only when an admin updates vendor status
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', id)
+
+      if (error) throw error
+
+      setMessage(status === 'approved'
+        ? 'Daldalaan raggaasifameera.'
+        : 'Galmeen daldalaa didameera.')
+
+      await loadAdminVendors()
+    } catch (error) {
+      console.error('Vendor status update error:', error)
+      setMessage('Haala galmee daldalaa jijjiiruun hin milkoofne. Maaloo irra deebi’i.')
+    } finally {
+      setVendorStatusUpdating(false)
+    }
   }
 
   useEffect(() => {
-    if (showAdmin && user?.app_metadata?.role === 'admin') {
-      loadAdminVendors()
+    let active = true
+
+    Promise.resolve().then(() => {
+      if (active && showAdmin && user?.app_metadata?.role === 'admin') {
+        loadAdminVendors()
+      }
+    })
+
+    return () => {
+      active = false
     }
   }, [showAdmin, user])
 
@@ -359,44 +480,54 @@ export default function App() {
       return
     }
 
-    if (!food.trim() || !price || Number(price) <= 0) {
+    const numericPrice = Number(price)
+    if (!food.trim() || !price || !Number.isFinite(numericPrice) || numericPrice <= 0) {
       setMessage('Maqaa nyaataa fi gatii sirrii galchi.')
       return
     }
 
-    const { data, error } = await supabase
-      .from('menu_items')
-      .insert({
-        vendor_id: vendorDbId,
-        name: food.trim(),
-        category,
-        price: Number(price),
-        description: description.trim(),
-        available: true
-      })
-      .select('id,name,category,description,price,vendor_id')
-      .single()
+    if (menuItemLock.current) return
+    menuItemLock.current = true
 
-    if (error) {
+    try {
+      const selectedVendorId = vendorDbId
+      const selectedVendorName = vendor
+
+      const { data, error } = await supabase
+        .from('menu_items')
+        .insert({
+          vendor_id: selectedVendorId,
+          name: food.trim(),
+          category,
+          price: numericPrice,
+          description: description.trim(),
+          available: true
+        })
+        .select('id,name,category,description,price,vendor_id')
+        .single()
+
+      if (error) throw error
+
+      setItems(previous => [{
+        id: data.id,
+        vendor_id: data.vendor_id,
+        vendor: selectedVendorName,
+        food: data.name,
+        category: data.category,
+        price: Number(data.price),
+        description: data.description || ''
+      }, ...previous])
+
+      setFood('')
+      setPrice('')
+      setDescription('')
+      setMessage('Menu database MILKI keessatti kuufameera.')
+    } catch (error) {
       console.error('Menu insert error:', error)
-      setMessage('Menu kuusuun hin milkoofne: ' + error.message)
-      return
+      setMessage('Menu kuusuun hin milkoofne. Maaloo irra deebi’i.')
+    } finally {
+      menuItemLock.current = false
     }
-
-    setItems(previous => [{
-      id: data.id,
-      vendor_id: data.vendor_id,
-      vendor: vendor,
-      food: data.name,
-      category: data.category,
-      price: Number(data.price),
-      description: data.description || ''
-    }, ...previous])
-
-    setFood('')
-    setPrice('')
-    setDescription('')
-    setMessage('Menu database MILKI keessatti kuufameera.')
   }
 
   async function deleteItem(id) {
@@ -466,7 +597,7 @@ export default function App() {
       }
     } catch (error) {
       console.error('Order tracking error:', error)
-      setTrackingMessage('Hordoffiin hin milkoofne: ' + error.message)
+      setTrackingMessage('Hordoffiin hin milkoofne. Maaloo koodii kee mirkaneessiitii irra deebi’i.')
     } finally {
       setTrackingLoading(false)
     }
@@ -475,7 +606,7 @@ export default function App() {
   async function handlePlaceOrder(e) {
     e.preventDefault()
 
-    if (orderSubmitting) return
+    if (orderSubmitLock.current || orderSubmitting) return
 
     if (!cart.length) {
       setOrderMessage('Cart kee duwwaa dha.')
@@ -509,6 +640,7 @@ export default function App() {
       return
     }
 
+    orderSubmitLock.current = true
     setOrderSubmitting(true)
     setOrderMessage('Ajaja kee database MILKI keessatti kuusaa jira...')
 
@@ -587,11 +719,16 @@ export default function App() {
       }
     } catch (error) {
       console.error('Order submission error:', error)
-      setOrderMessage('Ajaja kuusuun hin milkoofne: ' + error.message)
+      setOrderMessage('Ajaja kuusuun hin milkoofne. Maaloo irra deebi’i.')
     } finally {
+      orderSubmitLock.current = false
       setOrderSubmitting(false)
     }
   }
+
+  const vendorMenuItems = items.filter(
+    item => item.vendor_id === vendorDbId
+  )
 
   const filteredItems = items.filter(item => {
     const matchesSearch =
@@ -602,6 +739,7 @@ export default function App() {
   })
 
   return (
+    <Translate language={language}>
     <div className="app">
       <header className="topbar">
         <a className="brand" href="#">
@@ -611,6 +749,14 @@ export default function App() {
         <button className="cart-button" onClick={() => setShowVendor(!showVendor)}>
           🏪 Dashboard Daldalaa
         </button>
+        <label className="language-picker">
+          Language
+          <select value={language} onChange={e => setLanguage(e.target.value)} aria-label="Language">
+            <option value="om">Afaan Oromoo</option>
+            <option value="en">English</option>
+            <option value="am">አማርኛ</option>
+          </select>
+        </label>
         {user?.app_metadata?.role === 'admin' && (
           <button className="cart-button" onClick={() => setShowAdmin(v => !v)}>
             🔐 Admin
@@ -618,7 +764,7 @@ export default function App() {
         )}
       </header>
 
-      <AuthPanel user={user} onAuthChange={setUser} />
+      <Suspense fallback={<p>Fuula fe’aa jira...</p>}><AuthPanel user={user} onAuthChange={setUser} language={language} /></Suspense>
 
       {showAdmin && user?.app_metadata?.role === 'admin' && (
         <section className="vendor-panel">
@@ -642,12 +788,12 @@ export default function App() {
                 <p>Haala: <strong>{v.status}</strong></p>
               </div>
               <button type="button" className="primary-button"
-                disabled={v.status === 'approved'}
+                disabled={vendorStatusUpdating || v.status === 'approved'}
                 onClick={() => updateVendorStatus(v.id, 'approved')}>
                 ✓ Raggaasisi
               </button>
               <button type="button"
-                disabled={v.status === 'rejected'}
+                disabled={vendorStatusUpdating || v.status === 'rejected'}
                 onClick={() => updateVendorStatus(v.id, 'rejected')}>
                 ✕ Diduu
               </button>
@@ -674,10 +820,18 @@ export default function App() {
           <section className="vendor-panel">
             <h2>🏪 Dashboard Daldalaa</h2>
             <p>Nyaata kee galmeessi; gatii isaa ati murteessi.</p>
+
+            {vendorType?.toLowerCase() === 'hotel' && vendorDbId && vendorStatus === 'Raggaasifame' && (
+              <>
+                <Suspense fallback={<p>Fuula kutaa hoteelaa fe’aa jira...</p>}><HotelRoomManagement vendorId={vendorDbId} language={language} />
+                <HotelBookingManagement vendorId={vendorDbId} language={language} /></Suspense>
+              </>
+            )}
+
             <section className="vendor-orders">
               <h3>📦 Ajajoota Maamiltootaa ({vendorOrders.length})</h3>
               <button type="button" className="primary-button"
-                onClick={loadVendorOrders} disabled={ordersLoading}>
+                onClick={loadVendorOrders} disabled={ordersLoading || !vendorDbId || vendorStatus !== 'Raggaasifame'}>
                 {ordersLoading ? 'Feaa jira...' : 'Ajajoota Haaromsi'}
               </button>
               {ordersMessage && <p className="notice">{ordersMessage}</p>}
@@ -723,42 +877,80 @@ export default function App() {
             </section>
 
 
-            <form className="order-form" onSubmit={addItem}>
-              <label>Maqaa daldalaa</label>
-              <input required value={vendor}
-                onChange={e => setVendor(e.target.value)}
-                placeholder="Maqaa sirrii Hotel ykn Restaurant" />
+            <div className="vendor-switcher">
+              <label>Daldalaa filadhu</label>
+              <select
+                value={vendorDbId || ''}
+                onChange={e => {
+                  const selected = vendors.find(item => item.id === e.target.value)
+                  if (selected) applyVendorSelection(selected)
+                }}
+              >
+                <option value="">Daldalaa filadhu</option>
+                {vendors.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.business_name} — {item.vendor_type}
+                  </option>
+                ))}
+              </select>
+              {vendorLoading && <p>Odeeffannoo daldalaa fe'aa jira...</p>}
+            </div>
+
+            <section className="vendor-registration">
+              <h3>＋ Daldalaa haaraa galmeessi</h3>
+              <label>Maqaa daldalaa haaraa</label>
+              <input
+                value={newVendor}
+                onChange={e => setNewVendor(e.target.value)}
+                placeholder="Maqaa Hotel ykn Restaurant"
+              />
+
               <label>Gosa daldalaa</label>
-              <select required value={vendorType} onChange={e => setVendorType(e.target.value)}>
-                <option value="hotel">Hotel</option>
-                <option value="restaurant">Restaurant</option>
-                <option value="cafe">Café</option>
-                <option value="bakery">Bakery</option>
-                <option value="other">Kan biraa</option>
+              <select value={newVendorType} onChange={e => setNewVendorType(e.target.value)}>
+                <option value="Hotel">Hotel</option>
+                <option value="Restaurant">Restaurant</option>
+                <option value="Café">Café</option>
+                <option value="Bakery">Bakery</option>
+                <option value="Other">Kan biraa</option>
               </select>
 
-              <label>Lakkoofsa bilbilaa daldalaa</label>
-              <input required type="tel" value={vendorPhone}
-                onChange={e => setVendorPhone(e.target.value)}
-                placeholder="09... ykn +251..." />
+              <label>Lakkoofsa bilbilaa</label>
+              <input
+                type="tel"
+                value={newVendorPhone}
+                onChange={e => setNewVendorPhone(e.target.value)}
+                placeholder="09... ykn +251..."
+              />
 
               <label>Magaalaa</label>
-              <input required value={vendorCity}
-                onChange={e => setVendorCity(e.target.value)}
-                placeholder="Magaalaa daldalli jiru" />
+              <input
+                value={newVendorCity}
+                onChange={e => setNewVendorCity(e.target.value)}
+                placeholder="Magaalaa daldalli jiru"
+              />
 
-              <label>Teessoo guutuu daldalaa</label>
-              <textarea required value={vendorAddress}
-                onChange={e => setVendorAddress(e.target.value)}
-                placeholder="Naannoo, kebele fi teessoo daldalaa" />
+              <label>Teessoo guutuu</label>
+              <textarea
+                value={newVendorAddress}
+                onChange={e => setNewVendorAddress(e.target.value)}
+                placeholder="Naannoo, kebele fi teessoo daldalaa"
+              />
 
-              <p><strong>Haala galmee:</strong> {vendorStatus}</p>
-              <button className="primary-button" type="button"
+              <button
+                className="primary-button"
+                type="button"
                 onClick={registerVendor}
-                disabled={vendorStatus === 'Eeggataa' || vendorStatus === 'Raggaasifame'}>
-                {vendorStatus === 'Eeggataa' ? 'Eeyyama Admin eeggachaa jira' : vendorStatus === 'Raggaasifame' ? 'Daldalaan raggaasifameera' : 'Galmee Daldalaa Ergi'}
+                disabled={vendorLoading}
+              >
+                {vendorLoading ? 'Galmeessaa jira...' : 'Daldalaa Haaraa Galmeessi'}
               </button>
+            </section>
 
+            <p><strong>Daldalaa filatame:</strong> {vendor || 'Hin filatamne'}</p>
+            <p><strong>Haala galmee:</strong> {vendorStatus}</p>
+
+            {vendorDbId && vendorStatus === 'Raggaasifame' ? (
+              <form className="order-form" onSubmit={addItem}>
               <label>Maqaa nyaataa ykn dhugaatii</label>
               <input required list="food-options" value={food}
                 onChange={e => setFood(e.target.value)}
@@ -788,11 +980,17 @@ export default function App() {
                 + Menu irratti dabali
               </button>
             </form>
+            ) : (
+              <p className="notice">
+                Daldalaa raggaasifame filadhu. Galmeen daldalaa haaraan eeyyama Admin MILKI eeggata.
+              </p>
+            )}
+
 
             {message && <p className="notice">{message}</p>}
 
-            <h3>Nyaata ani galmeesse: {items.length}</h3>
-            {items.map(item => (
+            <h3>Nyaata ani galmeesse: {vendorMenuItems.length}</h3>
+            {vendorMenuItems.map(item => (
               <div className="cart-item" key={item.id}>
                 <span>{item.food} — {item.price} ETB</span>
                 <button onClick={() => deleteItem(item.id)}>Haquu ✕</button>
@@ -891,7 +1089,7 @@ export default function App() {
           )}
         </section>
 
-        <HotelBooking />
+        <Suspense fallback={<p>Fuula booking fe’aa jira...</p>}><HotelBooking language={language} /></Suspense>
 
         <section className="tracking-section">
         <h2>Ajaja Koo Hordofi</h2>
@@ -1006,5 +1204,6 @@ export default function App() {
 
       <footer>© 2026 MILKI FOOD & DRINK DELIVERY · Ethiopia</footer>
     </div>
+    </Translate>
   )
 }

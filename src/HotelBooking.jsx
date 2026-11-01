@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { Translate, translateText } from './i18n'
 
-export default function HotelBooking() {
+export default function HotelBooking({ language = 'om' }) {
   const [rooms, setRooms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -19,48 +20,110 @@ export default function HotelBooking() {
   const [trackingLoading, setTrackingLoading] = useState(false)
   const [trackingError, setTrackingError] = useState('')
 
-  const today = new Date().toLocaleDateString('en-CA')
+  const [today] = useState(() => new Date().toLocaleDateString('en-CA'))
 
-  async function loadRooms() {
+  async function loadRooms(isActive = () => true) {
+    if (!isActive()) return
+
     setLoading(true)
     setError('')
-    const { data, error } = await supabase
-      .from('hotel_rooms')
-      .select('id, room_name, description, nightly_price, capacity, image_url, vendors!inner(business_name, city, address, status)')
-      .eq('available', true)
-      .eq('vendors.status', 'approved')
-      .order('nightly_price', { ascending: true })
 
-    if (error) setError(error.message)
-    else setRooms(data || [])
-    setLoading(false)
+    try {
+      const { data: hotels, error: hotelError } = await supabase
+        .from('vendors')
+        .select('id,business_name,city,address')
+        .eq('vendor_type', 'Hotel')
+        .eq('status', 'approved')
+
+      if (hotelError) throw hotelError
+      if (!isActive()) return
+
+      const hotelIds = (hotels || []).map(hotel => hotel.id)
+
+      if (!hotelIds.length) {
+        setRooms([])
+        return
+      }
+
+      const { data: roomData, error: roomError } = await supabase
+        .from('hotel_rooms')
+        .select('id,room_name,description,nightly_price,capacity,image_url,vendor_id')
+        .eq('available', true)
+        .in('vendor_id', hotelIds)
+        .order('nightly_price', { ascending: true })
+
+      if (roomError) throw roomError
+      if (!isActive()) return
+
+      const hotelMap = new Map((hotels || []).map(hotel => [hotel.id, hotel]))
+      setRooms((roomData || []).map(room => ({
+        ...room,
+        vendors: hotelMap.get(room.vendor_id) || null
+      })))
+    } catch (err) {
+      if (!isActive()) return
+      console.error('Hotel room loading failed:', err)
+      setError('Kutaa hotelii fe’uun hin milkoofne. Maaloo irra deebi’i.')
+      setRooms([])
+    } finally {
+      if (isActive()) setLoading(false)
+    }
   }
 
   useEffect(() => {
-    loadRooms()
+    let active = true
+
+    Promise.resolve().then(() => {
+      if (active) loadRooms(() => active)
+    })
+
+    return () => {
+      active = false
+    }
   }, [])
 
   async function trackBooking(e) {
     e.preventDefault()
+    if (trackingLoading) return
+
     setTrackingLoading(true)
     setTrackingError('')
     setTrackingResult(null)
 
-    const { data, error } = await supabase.rpc('track_guest_room_booking', {
-      p_token: trackingToken.trim()
-    })
+    try {
+      const { data, error } = await supabase.rpc('track_guest_room_booking', {
+        p_token: trackingToken.trim()
+      })
 
-    if (error) setTrackingError('Booking hin argamne. Koodii sirrii galchi.')
-    else setTrackingResult(data)
+      if (error) throw error
 
-    setTrackingLoading(false)
+      if (data) {
+        setTrackingResult(data)
+      } else {
+        setTrackingError('Booking hin argamne. Koodii sirrii galchi.')
+      }
+    } catch (err) {
+      console.error('Booking tracking failed:', err)
+      setTrackingError('Booking hin argamne. Koodii sirrii galchi.')
+    } finally {
+      setTrackingLoading(false)
+    }
   }
 
   async function bookRoom(e) {
     e.preventDefault()
-    if (!selected) return
-    if (checkIn < today || checkOut <= checkIn) {
-      setError('Guyyaa seensaa fi bahumsaa sirriitti filadhu.')
+    if (!selected || saving) return
+
+    const guestCount = Number(guests)
+
+    if (
+      checkIn < today ||
+      checkOut <= checkIn ||
+      !Number.isInteger(guestCount) ||
+      guestCount < 1 ||
+      guestCount > Number(selected.capacity)
+    ) {
+      setError('Guyyaa seensaa, bahumsaa fi baayina keessummootaa sirriitti mirkaneessi.')
       return
     }
 
@@ -68,34 +131,41 @@ export default function HotelBooking() {
     setError('')
     setResult(null)
 
-    const { data, error } = await supabase.rpc('create_guest_room_booking', {
-      p_room_id: selected.id,
-      p_customer_name: name.trim(),
-      p_customer_phone: phone.trim(),
-      p_check_in: checkIn,
-      p_check_out: checkOut,
-      p_guest_count: Number(guests),
-      p_special_request: request.trim()
-    })
+    try {
+      const { data, error } = await supabase.rpc('create_guest_room_booking', {
+        p_room_id: selected.id,
+        p_customer_name: name.trim(),
+        p_customer_phone: phone.trim(),
+        p_check_in: checkIn,
+        p_check_out: checkOut,
+        p_guest_count: guestCount,
+        p_special_request: request.trim()
+      })
 
-    if (error) {
-      setError(error.message)
-    } else if (data?.booking_reference) {
-      setResult(data)
-      setSelected(null)
-      setName('')
-      setPhone('')
-      setCheckIn('')
-      setCheckOut('')
-      setGuests(1)
-      setRequest('')
-    } else {
-      setError(data?.message || 'Booking hin milkoofne. Irra deebi’i.')
+      if (error) throw error
+
+      if (data?.booking_reference) {
+        setResult(data)
+        setSelected(null)
+        setName('')
+        setPhone('')
+        setCheckIn('')
+        setCheckOut('')
+        setGuests(1)
+        setRequest('')
+      } else {
+        setError(data?.message || 'Booking hin milkoofne. Irra deebi’i.')
+      }
+    } catch (err) {
+      console.error('Hotel booking submission failed:', err)
+      setError('Booking erguun hin milkoofne. Maaloo irra deebi’i.')
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   return (
+    <Translate language={language}>
     <section className="hotel-booking">
       <div className="hotel-heading">
         <span className="eyebrow">MILKI HOTEL CONNECT</span>
@@ -170,12 +240,13 @@ export default function HotelBooking() {
           <div className="hotel-success">
             <h4>{trackingResult.hotel_name} — {trackingResult.room_name}</h4>
             <p>Lakkoofsa: <strong>{trackingResult.booking_reference}</strong></p>
-            <p>Haala booking: <strong>{trackingResult.status}</strong></p>
-            <p>Seensa: {trackingResult.check_in} | Bahumsa: {trackingResult.check_out}</p>
-            <p>Waliigala: {Number(trackingResult.total_price).toLocaleString()} ETB</p>
-            <p>Amma kaffalamu: {Number(trackingResult.amount_due_now).toLocaleString()} ETB</p>
-            <p>Kaffalame: {Number(trackingResult.amount_paid).toLocaleString()} ETB</p>
-            <p>Haala kaffaltii: <strong>{trackingResult.payment_status}</strong></p>
+            <p>{translateText('Haala booking:', language)} <strong>{translateText(trackingResult.status, language)}</strong></p>
+            <p>{translateText('Seensa:', language)} {trackingResult.check_in}</p>
+            <p>{translateText('Bahumsa:', language)} {trackingResult.check_out}</p>
+            <p>{translateText('Waliigala:', language)} {Number(trackingResult.total_price).toLocaleString()} ETB</p>
+            <p>{translateText('Amma kaffalamu:', language)} {Number(trackingResult.amount_due_now).toLocaleString()} ETB</p>
+            <p>{translateText('Kaffalame:', language)} {Number(trackingResult.amount_paid).toLocaleString()} ETB</p>
+            <p>{translateText('Haala kaffaltii:', language)} <strong>{translateText(trackingResult.payment_status, language)}</strong></p>
           </div>
         )}
       </div>
@@ -202,5 +273,6 @@ export default function HotelBooking() {
         </form>
       )}
     </section>
+    </Translate>
   )
 }

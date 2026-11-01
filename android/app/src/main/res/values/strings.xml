@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MILKI FOOD &amp; DRINK DELIVERY</string>
+    <string name="title_activity_main">MILKI FOOD &amp; DRINK DELIVERY</string>
+    <string name="package_name">com.milki.fooddelivery</string>
+    <string name="custom_url_scheme">com.milki.fooddelivery</string>
+</resources>

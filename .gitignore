@@ -27,3 +27,17 @@ dist-ssr
 *.backup
 *.backup-*
 *.before-*
+
+# Local backup files
+*.bak
+*.bak-*
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Environment secrets
+.env
+.env.*
+!.env.example

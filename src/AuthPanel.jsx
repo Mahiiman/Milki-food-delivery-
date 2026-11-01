@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { supabase } from './lib/supabase'
+import { Translate } from './i18n'
 
-export default function AuthPanel({ user, onAuthChange }) {
+export default function AuthPanel({ user, onAuthChange, language = 'om' }) {
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -10,6 +11,7 @@ export default function AuthPanel({ user, onAuthChange }) {
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (busy) return
     setBusy(true)
     setMessage('')
 
@@ -44,31 +46,37 @@ export default function AuthPanel({ user, onAuthChange }) {
   }
 
   async function handleSignOut() {
+    if (busy) return
     setBusy(true)
-    const { error } = await supabase.auth.signOut()
-    setBusy(false)
-    if (error) {
-      setMessage(error.message)
-      return
+    setMessage('')
+
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+
+      onAuthChange?.(null)
+      setMessage('Account keessaa baateetta.')
+    } catch (error) {
+      setMessage(error.message || 'Logout irratti dogoggorri uumame.')
+    } finally {
+      setBusy(false)
     }
-    onAuthChange?.(null)
-    setMessage('Account keessaa baateetta.')
   }
 
   if (user) {
     return (
-      <section className="auth-panel">
+      <Translate language={language}><section className="auth-panel">
         <p>Account: {user.email}</p>
         <button type="button" onClick={handleSignOut} disabled={busy}>
           {busy ? 'Eegaa...' : 'Baʼi'}
         </button>
         {message && <p>{message}</p>}
-      </section>
+      </section></Translate>
     )
   }
 
   return (
-    <section className="auth-panel">
+    <Translate language={language}><section className="auth-panel">
       <h2>{mode === 'login' ? 'Seeni' : 'Account Uumi'}</h2>
       <form onSubmit={handleSubmit}>
         <label>Email</label>
@@ -103,6 +111,6 @@ export default function AuthPanel({ user, onAuthChange }) {
         {mode === 'login' ? 'Account haaraa uumi' : 'Account qaba; seeni'}
       </button>
       {message && <p>{message}</p>}
-    </section>
+    </section></Translate>
   )
 }
