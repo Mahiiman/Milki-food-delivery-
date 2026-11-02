@@ -47,8 +47,12 @@ const foodSuggestions = {
 
 export default function App() {
   const [language, setLanguage] = useState(() => {
-    const saved = localStorage.getItem('milki-food-language')
-    return ['om', 'en', 'am'].includes(saved) ? saved : 'om'
+    try {
+      const saved = localStorage.getItem('milki-food-language')
+      return ['om', 'en', 'am'].includes(saved) ? saved : 'om'
+    } catch {
+      return 'om'
+    }
   })
 
   useEffect(() => {
