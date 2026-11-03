@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from './lib/supabase'
-import { Translate } from './i18n'
+import { Translate, translateText } from './i18n'
 
 export default function AuthPanel({ user, onAuthChange, language = 'om' }) {
   const [mode, setMode] = useState('login')
@@ -39,7 +39,8 @@ export default function AuthPanel({ user, onAuthChange, language = 'om' }) {
         setMessage('Seensa milkaaʼeera.')
       }
     } catch (error) {
-      setMessage(error.message || 'Dogoggorri uumame.')
+      console.error('Authentication failed:', error)
+      setMessage(translateText('Dogoggorri uumame.', language))
     } finally {
       setBusy(false)
     }
@@ -57,7 +58,8 @@ export default function AuthPanel({ user, onAuthChange, language = 'om' }) {
       onAuthChange?.(null)
       setMessage('Account keessaa baateetta.')
     } catch (error) {
-      setMessage(error.message || 'Logout irratti dogoggorri uumame.')
+      console.error('Sign out failed:', error)
+      setMessage(translateText('Logout irratti dogoggorri uumame.', language))
     } finally {
       setBusy(false)
     }

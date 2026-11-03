@@ -49,9 +49,9 @@ export default function App() {
   const [language, setLanguage] = useState(() => {
     try {
       const saved = localStorage.getItem('milki-food-language')
-      return ['om', 'en', 'am'].includes(saved) ? saved : 'om'
+      return ['om', 'en', 'am'].includes(saved) ? saved : 'en'
     } catch {
-      return 'om'
+      return 'en'
     }
   })
 
@@ -129,6 +129,7 @@ export default function App() {
   const [message, setMessage] = useState('')
   const [showVendor, setShowVendor] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
   const [adminVendors, setAdminVendors] = useState([])
   const [adminLoading, setAdminLoading] = useState(false)
   const [vendorStatusUpdating, setVendorStatusUpdating] = useState(false)
@@ -745,30 +746,41 @@ export default function App() {
   return (
     <Translate language={language}>
     <div className="app">
-      <header className="topbar">
-        <a className="brand" href="#">
-          <span className="brand-icon">🍽️</span>
+      <header className="topbar milki-topbar" id="home">
+        <a className="brand milki-brand" href="#home" aria-label="MILKI Food and Drink Delivery">
+          <span className="brand-icon milki-logo">🍽️</span>
           <span>MILKI <b>FOOD</b><small>& DRINK DELIVERY</small></span>
         </a>
-        <button className="cart-button" onClick={() => setShowVendor(!showVendor)}>
-          🏪 Dashboard Daldalaa
-        </button>
-        <label className="language-picker">
-          Language
-          <select value={language} onChange={e => setLanguage(e.target.value)} aria-label="Language">
-            <option value="om">Afaan Oromoo</option>
-            <option value="en">English</option>
-            <option value="am">አማርኛ</option>
-          </select>
-        </label>
-        {user?.app_metadata?.role === 'admin' && (
-          <button className="cart-button" onClick={() => setShowAdmin(v => !v)}>
-            🔐 Admin
-          </button>
-        )}
+        <nav className="milki-main-nav" aria-label="Main navigation">
+          <button type="button" className="milki-anchor" onClick={() => document.getElementById('menu')?.scrollIntoView({behavior:'smooth'})}>☰ Menu</button>
+          <button type="button" className="milki-anchor" onClick={() => { setShowAccount(true); setTimeout(() => document.getElementById('customer-account')?.scrollIntoView({behavior:'smooth'}), 50) }}>👤 Herrega</button>
+          <button type="button" className="milki-anchor" onClick={() => document.getElementById('order-tracking')?.scrollIntoView({behavior:'smooth'})}>📋 Ajaja Koo Hordofi</button>
+          <button type="button" className="milki-anchor milki-login" onClick={() => { setShowAccount(true); setTimeout(() => document.getElementById('customer-account')?.scrollIntoView({behavior:'smooth'}), 50) }}>🔐 Seeni</button>
+        </nav>
+        <div className="milki-header-tools">
+          <button className="cart-button milki-vendor-link" onClick={() => setShowVendor(!showVendor)}>🏪 Dashboard Daldalaa</button>
+          <label className="language-picker">
+            <span className="sr-only">Language</span>
+            <select value={language} onChange={e => setLanguage(e.target.value)} aria-label="Language">
+              <option value="en">English</option>
+              <option value="om">Afaan Oromoo</option>
+              <option value="am">አማርኛ</option>
+            </select>
+          </label>
+          {user?.app_metadata?.role === 'admin' && (
+            <button className="cart-button" onClick={() => setShowAdmin(v => !v)}>🔐 Admin</button>
+          )}
+        </div>
       </header>
 
-      <Suspense fallback={<p>Fuula fe’aa jira...</p>}><AuthPanel user={user} onAuthChange={setUser} language={language} /></Suspense>
+      {showAccount && (
+        <section id="customer-account">
+          <button type="button" onClick={() => setShowAccount(false)}>✕ Cufi</button>
+          <Suspense fallback={<p>Fuula fe’aa jira...</p>}>
+            <AuthPanel user={user} onAuthChange={setUser} language={language} />
+          </Suspense>
+        </section>
+      )}
 
       {showAdmin && user?.app_metadata?.role === 'admin' && (
         <section className="vendor-panel">
@@ -1095,7 +1107,7 @@ export default function App() {
 
         <Suspense fallback={<p>Fuula booking fe’aa jira...</p>}><HotelBooking language={language} /></Suspense>
 
-        <section className="tracking-section">
+        <section className="tracking-section" id="order-tracking">
         <h2>Ajaja Koo Hordofi</h2>
         <p>Koodii iccitii hordoffii kee galchi.</p>
         <form className="order-form" onSubmit={trackCustomerOrder}>

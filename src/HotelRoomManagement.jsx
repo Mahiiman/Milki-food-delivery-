@@ -21,7 +21,21 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
       success: 'Kutaan hotelii kuufameera.',
       error: 'Dogoggora: ',
       cancel: 'Dhiisi',
-      refresh: 'Haaromsi'
+      refresh: 'Haaromsi',
+      roomPlaceholder: 'Standard, Deluxe, Family...',
+      descriptionPlaceholder: 'Ibsa kutaa hotelii',
+      saving: 'Kuusaa jira...',
+      loadError: 'Kutaa fe’uun hin milkoofne.',
+      imageTypeError: 'JPEG, PNG ykn WebP qofa filadhu.',
+      imageSizeError: 'Suuraan 5 MB ol ta’uu hin qabu.',
+      validation: 'Maqaa, gatii sirrii fi baay’ina namoota lakkoofsa guutuu ta’e galchi.',
+      saveError: 'Kutaa kuusuun hin milkoofne. Odeeffannoo galchite fi mirga account kee mirkaneessi.',
+      availabilityError: 'Haala kutaa jijjiiruun hin milkoofne.',
+      confirmDelete: 'Kutaa kana haquu barbaaddaa?',
+      deleted: 'Kutaan haqameera.',
+      deleteError: 'Kutaa haquun hin milkoofne. Booking jiru yoo jiraate, database haquu dhoowwuu danda’a.',
+      night: 'halkan',
+      guests: 'keessummoota'
     },
     en: {
       title: '🏨 Hotel Room Management',
@@ -41,7 +55,21 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
       success: 'Room saved successfully.',
       error: 'Error: ',
       cancel: 'Cancel',
-      refresh: 'Refresh'
+      refresh: 'Refresh',
+      roomPlaceholder: 'Standard, Deluxe, Family...',
+      descriptionPlaceholder: 'Hotel room description',
+      saving: 'Saving...',
+      loadError: 'Could not load rooms.',
+      imageTypeError: 'Please choose JPEG, PNG or WebP only.',
+      imageSizeError: 'Image must not exceed 5 MB.',
+      validation: 'Enter a room name, valid price and whole-number guest capacity.',
+      saveError: 'Could not save room. Check your information and account permissions.',
+      availabilityError: 'Could not update room availability.',
+      confirmDelete: 'Do you want to delete this room?',
+      deleted: 'Room deleted.',
+      deleteError: 'Could not delete room. Existing bookings may prevent deletion.',
+      night: 'night',
+      guests: 'guests'
     },
     am: {
       title: '🏨 የሆቴል ክፍሎች አስተዳደር',
@@ -61,11 +89,25 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
       success: 'ክፍሉ ተቀምጧል።',
       error: 'ስህተት: ',
       cancel: 'ይቅር',
-      refresh: 'አድስ'
+      refresh: 'አድስ',
+      roomPlaceholder: 'መደበኛ፣ ዴሉክስ፣ ቤተሰብ...',
+      descriptionPlaceholder: 'የሆቴል ክፍል መግለጫ',
+      saving: 'በማስቀመጥ ላይ...',
+      loadError: 'ክፍሎችን መጫን አልተቻለም።',
+      imageTypeError: 'JPEG፣ PNG ወይም WebP ብቻ ይምረጡ።',
+      imageSizeError: 'የፎቶው መጠን ከ5 MB መብለጥ የለበትም።',
+      validation: 'የክፍል ስም፣ ትክክለኛ ዋጋ እና የእንግዶች ብዛት ያስገቡ።',
+      saveError: 'ክፍሉን ማስቀመጥ አልተቻለም። መረጃዎንና የመለያዎን ፈቃድ ያረጋግጡ።',
+      availabilityError: 'የክፍሉን መገኘት ሁኔታ መቀየር አልተቻለም።',
+      confirmDelete: 'ይህን ክፍል መሰረዝ ይፈልጋሉ?',
+      deleted: 'ክፍሉ ተሰርዟል።',
+      deleteError: 'ክፍሉን መሰረዝ አልተቻለም። ያሉ ቦታ ማስያዣዎች መሰረዙን ሊከለክሉ ይችላሉ።',
+      night: 'ሌሊት',
+      guests: 'እንግዶች'
     }
   }
 
-  const t = words[language] || words.om
+  const t = words[language] || words.en
   const roomsRequest = useRef(0)
   const saveRoomLock = useRef(false)
 
@@ -109,7 +151,7 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
     } catch (err) {
       if (requestId !== roomsRequest.current) return
       console.error('Hotel rooms loading failed:', err)
-      setMessage(t.error + 'Kutaa fe’uun hin milkoofne.')
+      setMessage(t.error + t.loadError)
     } finally {
       if (requestId === roomsRequest.current) setLoading(false)
     }
@@ -145,11 +187,11 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
 
     const allowed = ['image/jpeg', 'image/png', 'image/webp']
     if (!allowed.includes(imageFile.type)) {
-      throw new Error('JPEG, PNG ykn WebP qofa filadhu.')
+      throw new Error(t.imageTypeError)
     }
 
     if (imageFile.size > 5 * 1024 * 1024) {
-      throw new Error('Suuraan 5 MB ol ta’uu hin qabu.')
+      throw new Error(t.imageSizeError)
     }
 
     const extension = imageFile.type.split('/')[1].replace('jpeg', 'jpg')
@@ -202,7 +244,7 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
       !Number.isInteger(numericCapacity) ||
       numericCapacity < 1
     ) {
-      setMessage('Maqaa, gatii sirrii fi baay’ina namoota lakkoofsa guutuu ta’e galchi.')
+      setMessage(t.validation)
       return
     }
 
@@ -279,7 +321,7 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
       }
 
       console.error('Hotel room save failed:', error)
-      setMessage(t.error + 'Kutaa kuusuun hin milkoofne. Odeeffannoo galchite fi mirga account kee mirkaneessi.')
+      setMessage(t.error + t.saveError)
     } finally {
       saveRoomLock.current = false
       setSaving(false)
@@ -318,7 +360,7 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
       await loadRooms()
     } catch (err) {
       console.error('Room availability update failed:', err)
-      setMessage(t.error + 'Haala kutaa jijjiiruun hin milkoofne.')
+      setMessage(t.error + t.availabilityError)
     } finally {
       setActionId(null)
     }
@@ -326,7 +368,7 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
 
   async function deleteRoom(room) {
     if (!vendorId || actionId || saving) return
-    if (!window.confirm('Kutaa kana haquu barbaaddaa?')) return
+    if (!window.confirm(t.confirmDelete)) return
 
     setActionId(room.id)
     setMessage('')
@@ -355,11 +397,11 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
         }
       }
 
-      setMessage('Kutaan haqameera.')
+      setMessage(t.deleted)
       await loadRooms()
     } catch (err) {
       console.error('Room deletion failed:', err)
-      setMessage(t.error + 'Kutaa haquun hin milkoofne. Booking jiru yoo jiraate, database haquu dhoowwuu danda’a.')
+      setMessage(t.error + t.deleteError)
     } finally {
       setActionId(null)
     }
@@ -375,14 +417,14 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
           required
           value={roomName}
           onChange={e => setRoomName(e.target.value)}
-          placeholder="Standard, Deluxe, Family..."
+          placeholder={t.roomPlaceholder}
         />
 
         <label>{t.description}</label>
         <textarea
           value={description}
           onChange={e => setDescription(e.target.value)}
-          placeholder="Ibsa kutaa hotelii"
+          placeholder={t.descriptionPlaceholder}
         />
 
         <label>{t.price}</label>
@@ -429,7 +471,7 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
           type="submit"
           disabled={saving}
         >
-          {saving ? 'Kuusaa jira...' : editingId ? t.update : t.save}
+          {saving ? t.saving : editingId ? t.update : t.save}
         </button>
 
         {editingId && (
@@ -473,8 +515,8 @@ export default function HotelRoomManagement({ vendorId, language = 'om' }) {
 
             <h4>{room.room_name}</h4>
             <p>{room.description}</p>
-            <p><strong>{Number(room.nightly_price).toLocaleString()} ETB / night</strong></p>
-            <p>{room.capacity} guests</p>
+            <p><strong>{Number(room.nightly_price).toLocaleString()} ETB / {t.night}</strong></p>
+            <p>{room.capacity} {t.guests}</p>
             <p>{room.available ? t.available : t.unavailable}</p>
           </div>
 
