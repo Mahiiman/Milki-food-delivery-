@@ -1,0 +1,51 @@
+name: MILKI Android Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Prepare signing key
+        env:
+          KEY_BASE64: ${{ secrets.MILKI_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MILKI_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.MILKI_KEY_PASSWORD }}
+        run: |
+          echo "$KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/milki-release-key.jks"
+          printf 'storeFile=%s\nkeyAlias=milki\nstorePassword=%s\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/milki-release-key.jks" \
+            "$STORE_PASSWORD" "$KEY_PASSWORD" > android/keystore.properties
+          chmod 600 android/keystore.properties
+
+      - name: Build signed APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MILKI-FOOD-DELIVERY-Release
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error

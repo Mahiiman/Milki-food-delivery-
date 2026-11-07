@@ -41,3 +41,13 @@ dist-ssr
 .env
 .env.*
 !.env.example
+*.jks
+*.keystore
+key.properties
+
+# Android signing secrets
+*.jks
+*.keystore
+key.properties
+
+**/keystore.properties
