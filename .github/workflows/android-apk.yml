@@ -58,22 +58,42 @@ jobs:
         run: npx cap sync android
 
       - name: Prepare release signing key
-        if: ${{ env.MILKI_ANDROID_KEYSTORE_BASE64 != '' }}
+        id: signing
+        shell: bash
         run: |
-          echo "$MILKI_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/milki-release.jks"
-          echo "MILKI_RELEASE_STORE_FILE=$RUNNER_TEMP/milki-release.jks" >> "$GITHUB_ENV"
+          set +e
+          if [ -z "$MILKI_ANDROID_KEYSTORE_BASE64" ] || [ -z "$MILKI_RELEASE_STORE_PASSWORD" ] || [ -z "$MILKI_RELEASE_KEY_ALIAS" ] || [ -z "$MILKI_RELEASE_KEY_PASSWORD" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets are incomplete; debug APK can still be built."
+            exit 0
+          fi
+          KEYSTORE="$RUNNER_TEMP/milki-release.jks"
+          if ! printf '%s' "$MILKI_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"; then
+            rm -f "$KEYSTORE"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Keystore Base64 is invalid; debug APK can still be built."
+            exit 0
+          fi
+          if ! keytool -list -keystore "$KEYSTORE" -storepass "$MILKI_RELEASE_STORE_PASSWORD" -alias "$MILKI_RELEASE_KEY_ALIAS" >/dev/null 2>&1; then
+            rm -f "$KEYSTORE"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Keystore, password, or alias is invalid; debug APK can still be built."
+            exit 0
+          fi
+          echo "MILKI_RELEASE_STORE_FILE=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Build Debug APK
         working-directory: android
         run: ./gradlew assembleDebug
 
       - name: Build Signed Release APK
-        if: ${{ env.MILKI_ANDROID_KEYSTORE_BASE64 != '' }}
+        if: ${{ steps.signing.outputs.ready == 'true' }}
         working-directory: android
         run: ./gradlew assembleRelease
 
       - name: Upload Signed Release APK
-        if: ${{ env.MILKI_ANDROID_KEYSTORE_BASE64 != '' }}
+        if: ${{ steps.signing.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: MILKI-FOOD-DELIVERY-Signed-Release-APK
